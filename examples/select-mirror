@@ -1,0 +1,58 @@
+#!/bin/bash
+
+# ---
+# A sample to ilustrate communications between zypper and urlsolver plugins
+# ---
+
+# PRELUDE: FIND THE REAL PATH OF THIS FILE
+pushd . > '/dev/null';
+SCRIPT_PATH="${BASH_SOURCE[0]:-$0}";
+
+while [ -h "$SCRIPT_PATH" ];
+do
+    cd "$( dirname -- "$SCRIPT_PATH"; )";
+    SCRIPT_PATH="$( readlink -f -- "$SCRIPT_PATH"; )";
+done
+
+cd "$( dirname -- "$SCRIPT_PATH"; )" > '/dev/null';
+SCRIPT_PATH="$( pwd; )";
+popd  > '/dev/null';
+# END PRELUDE
+
+source "${SCRIPT_PATH}/zypper-plugin.bash"
+
+function main {
+  while read -r -t 1 -d $'\0' frame; do
+    zpb_read_frame "$frame"
+
+    if [[ "$ZPB_COMMAND" == "RESOLVEURL" ]];
+    then
+      zpb_log "Resolving url"
+      # here's the magic ✨
+
+      if [[ "$ZPB_HEADER_PRODUCT" == "MYPRODUCT" ]]; then
+        zpb_reply "RESOLVEDURL" \
+          "https://rpm-mirror.local/rpm/$ZPB_HEADER_PRODUCT/$ZPB_HEADER_VERSION/$ZPB_HEADER_REPO" \
+          "Authorization:Bearer mytoken" \
+          "Another-Header:With value"
+
+      else
+        zpb_reply "ERROR" "Reason: Unknown product" "exit:1"
+      fi
+    elif [[ "$ZPB_COMMAND" == "_DISCONNECT" ]];
+    then
+      exec 0<&-
+      zpb_reply "ACK" "Disconnect" "exit:0"
+      return
+    fi
+  done
+}
+
+function close_descriptors {
+  exec 1<&-
+  exec 2<&-
+}
+
+main "$@"
+
+trap close_descriptors EXIT
